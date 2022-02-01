@@ -11,7 +11,7 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 
 sys.path.insert(0, './')
-from utils.nn import build_network, convert_to_principal_model
+from utils.nn import build_network, convert_to_orth_model
 from data.dataset import *
 
 parser = argparse.ArgumentParser()
@@ -25,6 +25,14 @@ parser.add_argument(
 )
 parser.add_argument( 
     '--dataset', default='cifar10', type=str, choices=['cifar10', 'cifar100', 'imagenet']
+)
+parser.add_argument(
+    '--channel-dropout', default='1.0', type=float,
+    help='dropout rate in orthonal channels'
+)
+parser.add_argument(
+    '--drop-orthogonal', action='store_true',
+    help='whether to drop orthonal channels'
 )
 parser.add_argument( '--root-dir', default='./', type=str )
 parser.add_argument( '--batch-size', default=32, type=int )
@@ -56,6 +64,11 @@ def main():
         sz_img = 224
         train_set = dataset_IMAGENET_train
         test_set = dataset_IMAGENET_test
+        
+    # convert model if using orthonal channel dropout
+    if args.drop_orthogonal:
+        model = convert_to_orth_model( model, args.channel_dropout )
+
     if args.device == 'gpu':
         model.cuda()
     else:
@@ -88,7 +101,7 @@ def main():
 
     # start training
     for epoch in range(0, args.epochs):
-        prec1_train, loss_train = train( model, train_loader, criterion, optimizer, sgxdnn, epoch )
+        prec1_train, loss_train = train( model, train_loader, criterion, optimizer, epoch )
 
         prec1_val, loss_val = validate( model, val_loader, criterion, sgxdnn, epoch )
 
