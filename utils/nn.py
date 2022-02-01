@@ -29,9 +29,8 @@ def create_orth_conv2d( m, dropout ):
     ichnls, ochnls = m.in_channels, m.out_channels
     sz_kern, stride, padding = m.kernel_size, m.stride, m.padding
     m_bias = m.bias
-    print( 'Bias: ', m_bias )
     conv2d_U = torch.nn.Conv2d( ichnls, ochnls, sz_kern, stride, padding, bias=False  )
-    conv2d_V = torch.nn.Conv2d( ochnls, ochnls, 1, 1, 0, bias=m_bias )
+    conv2d_V = torch.nn.Conv2d( ochnls, ochnls, 1, 1, 0 )
     conv2d_S = torch.nn.Conv2d( ochnls, ochnls, 1, 1, 0, groups=ochnls, bias=False )
 
     return [ conv2d_U, conv2d_S, conv2d_V ]
