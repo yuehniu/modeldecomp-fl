@@ -51,7 +51,7 @@ def convert_to_orth_model( model, dropout ):
             else:
                 if isinstance( m, torch.nn.Conv2d ):
                     m_orth = create_orth_conv2d( m, dropout )
-                    model_orth.extend( m )
+                    model_orth.extend( m_orth )
                 else:
                     model_orth.append( m )
 
