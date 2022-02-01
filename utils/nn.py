@@ -31,6 +31,9 @@ def create_orth_conv2d( m, dropout ):
     m_bias = m.bias
     conv2d_U = torch.nn.Conv2d( ichnls, ochnls, sz_kern, stride, padding, bias=False  )
     conv2d_V = torch.nn.Conv2d( ochnls, ochnls, 1, 1, 0, bias=m_bias )
+    conv2d_S = torch.nn.Conv2d( ochnls, ochnls, 1, 1, 0, groups=ochnls, bias=False )
+
+    return [ conv2d_U, conv2d_S, conv2d_V ]
 
 
 def convert_to_orth_model( model, dropout ):
@@ -48,7 +51,7 @@ def convert_to_orth_model( model, dropout ):
             else:
                 if isinstance( m, torch.nn.Conv2d ):
                     m_orth = create_orth_conv2d( m, dropout )
-                    model_orth.append( m )
+                    model_orth.extend( m )
                 else:
                     model_orth.append( m )
 
