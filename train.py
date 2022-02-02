@@ -35,11 +35,11 @@ parser.add_argument(
     help='whether to drop orthonal channels'
 )
 parser.add_argument( '--root-dir', default='./', type=str )
-parser.add_argument( '--batch-size', default=32, type=int )
-parser.add_argument( '--lr', default=0.01, type=float )
+parser.add_argument( '--batch-size', default=256, type=int )
+parser.add_argument( '--lr', default=0.1, type=float )
 parser.add_argument( '--momentum', default=0.9, type=float )
-parser.add_argument( '--wd', default=0.0005, type=float )
-parser.add_argument( '--epochs', default=100, type=int )
+parser.add_argument( '--wd', default=0.0002, type=float )
+parser.add_argument( '--epochs', default=150, type=int )
 parser.add_argument( '--workers', default=4, type=int )
 parser.add_argument( '--check-freq', default=20, type=int )
 parser.add_argument( '--save-dir', default='./checkpoints', type=str )
@@ -99,11 +99,16 @@ def main():
         weight_decay=args.wd
     )
 
+    # lr scheduler
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR( optimizer, milestones=[ 50, 100, 150 ], gamma=0.1 )
+
     # start training
     for epoch in range(0, args.epochs):
         prec1_train, loss_train = train( model, train_loader, criterion, optimizer, epoch )
 
         prec1_val, loss_val = validate( model, val_loader, criterion, sgxdnn, epoch )
+
+        lr_scheduler.step()
 
         # save checkpoint
         #if epoch % args.check_freq == 0:
