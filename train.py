@@ -11,12 +11,12 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 
 sys.path.insert(0, './')
-from utils.nn import build_network, convert_to_orth_model
+from utils.nn import build_network, convert_to_orth_model, update_orth_channel
 from data.dataset import *
 
 parser = argparse.ArgumentParser()
 parser.add_argument( 
-    '--model', default='vgg16', type=str, 
+    '--model', default='resnet18', type=str,
     help='model name' 
 )
 parser.add_argument( 
@@ -37,37 +37,46 @@ parser.add_argument(
 parser.add_argument( '--root-dir', default='./', type=str )
 parser.add_argument( '--batch-size', default=256, type=int )
 parser.add_argument( '--lr', default=0.1, type=float )
-parser.add_argument( '--momentum', default=0.9, type=float )
+parser.add_argument( '--momentum', default=0.6, type=float )
 parser.add_argument( '--wd', default=0.0002, type=float )
-parser.add_argument( '--epochs', default=150, type=int )
+parser.add_argument( '--epochs', default=200, type=int )
 parser.add_argument( '--workers', default=4, type=int )
 parser.add_argument( '--check-freq', default=20, type=int )
 parser.add_argument( '--save-dir', default='./checkpoints', type=str )
+parser.add_argument(
+    '--pre-train', default=None, type=str,
+    help='pretrained model'
+)
+args = parser.parse_args()
+
 
 def main():
-    global args
-
-    args = parser.parse_args()
-
     # build model
-    if ( args.dataset == 'cifar10' ):
-        model = build_network( args.model, len_feature=512, num_classes=10 ) #ResNet:64 VGG:512
-        sz_img = 32
+    model = None
+    train_set, test_set = None, None
+    if args.dataset == 'cifar10':
+        model = build_network( args.model, len_feature=512, num_classes=10 )  # ResNet:64 VGG:512
+        # sz_img = 32
         train_set = dataset_CIFAR10_train
         test_set = dataset_CIFAR10_test
-    elif ( args.dataset == 'imagenet' ):
-        if ( 'vgg' in args.model ):
+    elif args.dataset == 'imagenet':
+        len_feature = 512
+        if 'vgg' in args.model:
             len_feature = 4608
-        elif ( 'resnet' in args.model ):
+        elif 'resnet' in args.model:
             len_feature = 512
-        model = build_network( args.model, len_feature=len_feature, num_classes=1000 ) #ResNet: 256 VGG:4608
-        sz_img = 224
+        model = build_network( args.model, len_feature=len_feature, num_classes=1000 )  # ResNet: 256 VGG:4608
+        # sz_img = 224
         train_set = dataset_IMAGENET_train
         test_set = dataset_IMAGENET_test
-        
-    # convert model if using orthonal channel dropout
+
+    assert model is not None, 'A model has not been defined!'
+    if args.pre_train is not None:
+        model.load_state_dict( torch.load( args.pre_train )[ 'state_dict' ] )
+
     if args.drop_orthogonal:
-        model = convert_to_orth_model( model, args.channel_dropout )
+        model = convert_to_orth_model( model )
+    # update_orth_channel( model, dropout=args.channel_dropout )
 
     if args.device == 'gpu':
         model.cuda()
@@ -75,7 +84,8 @@ def main():
         model.cpu()
 
     # construct dataset
-    normalize = transforms.Normalize( mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225] )
+    assert train_set is not None, 'a training dataset has not been defined!'
+    assert test_set is not None, 'a test dataset has not been defined!'
     train_loader = torch.utils.data.DataLoader(
         train_set,
         batch_size=args.batch_size, shuffle=True, drop_last=True,
@@ -100,25 +110,35 @@ def main():
     )
 
     # lr scheduler
-    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR( optimizer, milestones=[ 50, 100, 150 ], gamma=0.1 )
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        optimizer, milestones=[ 50, 100, 150 ], gamma=0.1 )
 
     # start training
     for epoch in range(0, args.epochs):
-        prec1_train, loss_train = train( model, train_loader, criterion, optimizer, epoch )
+        prec1_train, loss_train = train(
+            model, train_loader, criterion, optimizer, epoch
+        )
 
-        prec1_val, loss_val = validate( model, val_loader, criterion, sgxdnn, epoch )
+        prec1_val, loss_val = validate( model, val_loader, criterion, epoch )
 
-        lr_scheduler.step()
+        lr_scheduler.step( epoch=epoch )
+
+        # update orthogonal channel after every epoch
+        print( 'Update orthogonal channel with dropout: ', args.channel_dropout )
+        update_orth_channel( model, dropout=args.channel_dropout )
 
         # save checkpoint
-        #if epoch % args.check_freq == 0:
-        #    state = {
-        #        'epoch': epoch + 1,
-        #        'state_dict': model.state_dict(),
-        #        'prec1': prec1_val,
-        #    }
-        #    file_name = os.path.join(args.save_dir, 'checkpoint_{}.tar'.format(epoch))
-        #    torch.save(state, file_name)
+        """
+        if epoch % args.check_freq == 0:
+            state = {
+                'epoch': epoch + 1,
+                'state_dict': model.state_dict(),
+                'prec1': prec1_val,
+            }
+            file_name = os.path.join(args.save_dir, 'checkpoint_{}.tar'.format(epoch))
+            torch.save(state, file_name)
+        """
+
 
 def train( model, train_loader, criterion, optimizer, epoch ):
     batch_time, data_time = AverageMeter(), AverageMeter()
@@ -127,9 +147,12 @@ def train( model, train_loader, criterion, optimizer, epoch ):
     model.train()
 
     end = time.time()
+    # TODO: check model factoring with different dropout rate
     for i, ( input, target ) in enumerate( train_loader ):
         # record data loading time
         data_time.update( time.time() - end )
+
+        # input = torch.ones( ( args.batch_size, 3, 32, 32 ), dtype=torch.float32 )
 
         if args.device == 'gpu':
             input = input.cuda()
@@ -161,9 +184,10 @@ def train( model, train_loader, criterion, optimizer, epoch ):
                   'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
                   'Loss {avg_loss.avg:.4f}\t'
                   'Prec@1 {avg_acc.avg:.3f}'.format(
-                      epoch, i, len(train_loader), batch_time = batch_time,
-                      data_time = data_time, avg_loss = avg_loss, avg_acc = avg_acc))
+                      epoch, i, len(train_loader), batch_time=batch_time,
+                      data_time = data_time, avg_loss=avg_loss, avg_acc=avg_acc))
     return avg_acc, avg_loss
+
 
 def validate( model, val_loader, criterion, epoch ):
     avg_loss = AverageMeter()
@@ -189,6 +213,7 @@ def validate( model, val_loader, criterion, epoch ):
 
     return avg_acc, avg_loss
 
+
 def cal_acc( output, target, topk=(1,) ):
     """
     Calculate model accuracy
@@ -210,6 +235,7 @@ def cal_acc( output, target, topk=(1,) ):
         acc.append(correct_k.mul_(100.0 / batch_size))
     return acc
 
+
 class AverageMeter( object ):
     """Computes and stores the average and current value"""
     def __init__( self ):
@@ -226,6 +252,7 @@ class AverageMeter( object ):
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
+
 
 if __name__ == '__main__':
     main()
