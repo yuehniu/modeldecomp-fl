@@ -9,6 +9,7 @@ import time
 import torch
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
+from torch.utils.tensorboard import SummaryWriter
 
 sys.path.insert(0, './')
 from utils.nn import build_network, convert_to_orth_model, update_orth_channel
@@ -27,17 +28,18 @@ parser.add_argument(
     '--dataset', default='cifar10', type=str, choices=['cifar10', 'cifar100', 'imagenet']
 )
 parser.add_argument(
-    '--channel-dropout', default='1.0', type=float,
-    help='dropout rate in orthonal channels'
+    '--channel-keep', default='0.8', type=float,
+    help='keep rate in orthonal channels'
 )
 parser.add_argument(
     '--drop-orthogonal', action='store_true',
     help='whether to drop orthonal channels'
 )
 parser.add_argument( '--root-dir', default='./', type=str )
-parser.add_argument( '--batch-size', default=256, type=int )
+parser.add_argument( '--batch-size', default=128, type=int )
 parser.add_argument( '--lr', default=0.1, type=float )
-parser.add_argument( '--momentum', default=0.6, type=float )
+parser.add_argument( '--decay', default='cos', choices=[ 'cos', 'multisteps' ] )
+parser.add_argument( '--momentum', default=0.9, type=float )
 parser.add_argument( '--wd', default=0.0002, type=float )
 parser.add_argument( '--epochs', default=200, type=int )
 parser.add_argument( '--workers', default=4, type=int )
@@ -47,6 +49,7 @@ parser.add_argument(
     '--pre-train', default=None, type=str,
     help='pretrained model'
 )
+parser.add_argument( '--logdir', default='log/resnet18/orig' )
 args = parser.parse_args()
 
 
@@ -75,8 +78,9 @@ def main():
         model.load_state_dict( torch.load( args.pre_train )[ 'state_dict' ] )
 
     if args.drop_orthogonal:
-        model = convert_to_orth_model( model )
+        model = convert_to_orth_model( model, args.channel_keep )
     # update_orth_channel( model, dropout=args.channel_dropout )
+    print( model )
 
     if args.device == 'gpu':
         model.cuda()
@@ -93,7 +97,7 @@ def main():
     )
     val_loader = torch.utils.data.DataLoader(
         test_set,
-        batch_size=args.batch_size, shuffle=False, drop_last = True,
+        batch_size=args.batch_size, shuffle=False, drop_last=True,
         num_workers=args.workers, pin_memory=True 
     )
 
@@ -105,27 +109,46 @@ def main():
         criterion.cpu()
     optimizer = torch.optim.SGD(
         model.parameters(), args.lr,
-        momentum=args.momentum,
-        weight_decay=args.wd
+        momentum=args.momentum, weight_decay=args.wd
     )
 
     # lr scheduler
-    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
-        optimizer, milestones=[ 50, 100, 150 ], gamma=0.1 )
+    if args.decay == 'cos':
+        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, args.epochs, eta_min=0.001
+        )
+    elif args.decay == 'multisteps':
+        lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
+            optimizer, milestones=[ 50, 100, 150 ], gamma=0.1
+        )
+    else:
+        raise ValueError( 'Unexpected lr scheduler!!!' )
 
     # start training
+    writer = SummaryWriter( log_dir=args.logdir )
+    best_acc = 0.0
     for epoch in range(0, args.epochs):
         prec1_train, loss_train = train(
             model, train_loader, criterion, optimizer, epoch
         )
 
-        prec1_val, loss_val = validate( model, val_loader, criterion, epoch )
+        prec1_val, loss_val = validate(model, val_loader, criterion, epoch)
 
-        lr_scheduler.step( epoch=epoch )
+        lr_scheduler.step(epoch=epoch)
 
         # update orthogonal channel after every epoch
-        print( 'Update orthogonal channel with dropout: ', args.channel_dropout )
-        update_orth_channel( model, dropout=args.channel_dropout )
+        if args.drop_orthogonal and epoch % 2 == 0:
+            print( 'Update orthogonal channel with keep rate: ', args.channel_keep )
+            with torch.no_grad():
+                update_orth_channel( model, optimizer, keep=args.channel_keep )
+
+        # store training record
+        writer.add_scalar( 'train/loss', loss_train.avg, epoch )
+        writer.add_scalar( 'test/acc', prec1_val.avg, epoch )
+
+        # update best accuracy
+        if prec1_val.avg > best_acc:
+            best_acc = prec1_val.avg
 
         # save checkpoint
         """
@@ -138,6 +161,8 @@ def main():
             file_name = os.path.join(args.save_dir, 'checkpoint_{}.tar'.format(epoch))
             torch.save(state, file_name)
         """
+    writer.close()
+    print( 'Best accuracy: ', best_acc )
 
 
 def train( model, train_loader, criterion, optimizer, epoch ):
@@ -147,7 +172,7 @@ def train( model, train_loader, criterion, optimizer, epoch ):
     model.train()
 
     end = time.time()
-    # TODO: check model factoring with different dropout rate
+    # TODO: resolve how to update momentum
     for i, ( input, target ) in enumerate( train_loader ):
         # record data loading time
         data_time.update( time.time() - end )
@@ -185,7 +210,7 @@ def train( model, train_loader, criterion, optimizer, epoch ):
                   'Loss {avg_loss.avg:.4f}\t'
                   'Prec@1 {avg_acc.avg:.3f}'.format(
                       epoch, i, len(train_loader), batch_time=batch_time,
-                      data_time = data_time, avg_loss=avg_loss, avg_acc=avg_acc))
+                      data_time=data_time, avg_loss=avg_loss, avg_acc=avg_acc))
     return avg_acc, avg_loss
 
 
