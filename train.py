@@ -12,7 +12,7 @@ import torchvision.datasets as datasets
 from torch.utils.tensorboard import SummaryWriter
 
 sys.path.insert(0, './')
-from utils.nn import build_network, convert_to_orth_model, update_orth_channel
+from utils.nn import build_network, convert_to_orth_model, update_orth_channel, add_regular_dropout
 from data.dataset import *
 
 parser = argparse.ArgumentParser()
@@ -29,11 +29,15 @@ parser.add_argument(
 )
 parser.add_argument(
     '--channel-keep', default='0.8', type=float,
-    help='keep rate in orthonal channels'
+    help='keep rate in orthogonal channels'
 )
 parser.add_argument(
     '--drop-orthogonal', action='store_true',
-    help='whether to drop orthonal channels'
+    help='whether to drop orthogonal channels'
+)
+parser.add_argument(
+    '--drop-regular', action='store_true',
+    help='whether to drop regular convolutional channels'
 )
 parser.add_argument( '--root-dir', default='./', type=str )
 parser.add_argument( '--batch-size', default=128, type=int )
@@ -79,6 +83,8 @@ def main():
 
     if args.drop_orthogonal:
         model = convert_to_orth_model( model, args.channel_keep )
+    elif args.drop_regular:
+        model = add_regular_dropout( model, drop=1-args.channel_keep )
     # update_orth_channel( model, dropout=args.channel_dropout )
     print( model )
 
@@ -132,12 +138,14 @@ def main():
             model, train_loader, criterion, optimizer, epoch
         )
 
-        prec1_val, loss_val = validate(model, val_loader, criterion, epoch)
+        prec1_val, loss_val = validate(
+            model, val_loader, criterion, epoch
+        )
 
-        lr_scheduler.step(epoch=epoch)
+        lr_scheduler.step( epoch=epoch )
 
         # update orthogonal channel after every epoch
-        if args.drop_orthogonal and epoch % 2 == 0:
+        if args.drop_orthogonal:
             print( 'Update orthogonal channel with keep rate: ', args.channel_keep )
             with torch.no_grad():
                 update_orth_channel( model, optimizer, keep=args.channel_keep )
