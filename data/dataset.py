@@ -49,7 +49,7 @@ dataset_CIFAR100_test = datasets.CIFAR100(
     ])
 )
 
-
+"""enable for further experiment with ImageNet
 dataset_IMAGENET_train = datasets.ImageFolder(
     '/home/julien/dataset/cv/imagenet/train', 
     transforms.Compose([
@@ -69,3 +69,4 @@ dataset_IMAGENET_test = datasets.ImageFolder(
         normalize,
     ])
 )
+"""
