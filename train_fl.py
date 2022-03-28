@@ -57,6 +57,9 @@ parser.add_argument(
     '--distribution', default='iid', type=str, choices=['iid', 'noniid'], help='i.i.d or non i.i.d data'
 )
 parser.add_argument(
+    '--alpha', default=1.0, type=float, help='parameter for Dirichlet distribution'
+)
+parser.add_argument(
     '--local-epoch', default=2, type=int, help='number of local training epoch before aggregating'
 )
 parser.add_argument(

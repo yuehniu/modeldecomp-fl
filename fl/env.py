@@ -91,3 +91,8 @@ class Context():
                 writer.add_scalar( 'fl_val/loss', fl_loss, r )
                 writer.add_scalar( 'fl_val/acc1', fl_acc1, r )
 
+        self.logger.info(
+            'FL training with {} model with best accuracy {}'.format(
+                model_str, self.server.best_acc
+            )
+        )

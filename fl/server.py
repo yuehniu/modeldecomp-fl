@@ -12,6 +12,7 @@ class Server( object ):
         self.train_dl = train_dl
         self.val_dl = val_dl
         self.criterion = torch.nn.CrossEntropyLoss()
+        self.best_acc = 0.0
         self.logger = logger
 
     def aggregate( self, clients ):
@@ -62,6 +63,8 @@ class Server( object ):
             avg_loss.update( loss.item(), input.size( 0 ) )
             avg_acc.update( prec1.item(), input.size( 0 ) )
 
+        if self.best_acc < avg_acc.avg:
+            self.best_acc = avg_acc.avg
         self.logger.info('Server: \tRound: [{}]\tLoss {:.4f}\tPrec@1 {:.3f}'.format(
                 r, avg_loss.avg, avg_acc.avg
             )

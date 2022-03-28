@@ -44,13 +44,16 @@ class Client( object ):
         Returns:
         """
         cur_global_epoch = cur_round * self.args.local_epoch
+        cur_local_epoch = 0
         for epoch in range( cur_global_epoch, cur_global_epoch + self.args.local_epoch ):
-            self.train_one_epoch( epoch )
+            self.train_one_epoch( epoch, False )
             self.eval( epoch )
 
             self.lr_scheduler.step( epoch=cur_round )
 
-    def train_one_epoch( self, epoch ):
+            cur_local_epoch += 1
+
+    def train_one_epoch( self, epoch, display ):
         batch_time, data_time = AverageMeter(), AverageMeter()
         avg_loss, avg_acc = AverageMeter(), AverageMeter()
 
@@ -88,7 +91,7 @@ class Client( object ):
             batch_time.update( time.time() - end )
             end = time.time()
 
-            if i % self.args.check_freq == 0:
+            if i == len( self.train_dl )-1 and display:
                 self.logger.info(
                     'Client: {0}\t Epoch: [{1}][{2}/{3}]\t'
                     'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
