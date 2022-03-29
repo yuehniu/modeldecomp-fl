@@ -24,14 +24,16 @@ def add_frob_decay( model, alpha=0.0001 ):
                     ichnls, ochnls = m.conv2d_V.in_channels, m.conv2d_V.out_channels
                     sz_kern = m.conv2d_V.kernel_size
                     m_V = m.conv2d_V.weight.data.view(ochnls, ichnls * sz_kern[0] * sz_kern[1])
+                    m_V *= torch.unsqueeze( m.chnl_mask, 1 )  # only perform decay non-masked channels
                     m_s = m.conv2d_S.weight.data.view(ochnls, )
                     m_U = m.conv2d_U.weight.data.view(ochnls, ochnls)
+                    m_U *= torch.unsqueeze( m.chnl_mask, 0 )  # only perform decay non-masked channels
 
                     US = torch.matmul( m_U, torch.diag( m_s ) )
                     SV = torch.matmul( torch.diag( m_s ), m_V )
 
-                    U_frob = torch.chain_matmul( m_U, SV, SV.T )
-                    V_frob = torch.chain_matmul( US.T, US, m_V )
+                    U_frob = torch.linalg.multi_dot( ( m_U, SV, SV.T ) )
+                    V_frob = torch.linalg.multi_dot( ( US.T, US, m_V ) )
 
                     U_grad = U_frob.view( ochnls, ochnls, 1, 1 )
                     V_grad = V_frob.view( ochnls, ichnls, *sz_kern )
