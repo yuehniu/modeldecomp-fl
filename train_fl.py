@@ -116,6 +116,8 @@ def main():
     # ---------------------- Start FL training ---------------------- #
     fl_context.fl_train( writer )
 
+    writer.close()
+
 
 if __name__ == '__main__':
     main()

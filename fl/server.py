@@ -32,7 +32,7 @@ class Server( object ):
         Note:
             In this version, we simulate the sub model creation by apply mask to selected channels.
         """
-        self.logger.info( 'Server: \tcreate sub models to clients' )
+        self.logger.info( 'Server: \tsend aggregated models to clients' )
 
         for i, client in enumerate( clients ):
             send_sub_model( self.model, client.model )
@@ -94,9 +94,12 @@ class Server( object ):
                         t_U = m_c.conv2d_U.weight.data.view( ochnls, ochnls )
 
                         # reconstruct original kernels
+                        t_s_norm = torch.norm( t_s )
                         t_s *= m_c.chnl_mask
+                        t_s_mask_norm = torch.norm( t_s )
+                        scaling = t_s_norm / t_s_mask_norm
                         t_USV = torch.mm( torch.mm( t_U, torch.diag( t_s ) ), t_V )
-                        w_USV = t_USV.view( ochnls, ichnls, *sz_kern )
+                        w_USV = t_USV.view( ochnls, ichnls, *sz_kern ) * scaling
 
                         # apply aggregation
                         m_s.weight.data.add_( w_USV, alpha=alpha )

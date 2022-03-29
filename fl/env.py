@@ -87,12 +87,12 @@ class Context():
 
             self.global_epoch += self.args.local_epoch
 
-            if not writer:
-                writer.add_scalar( 'fl_val/loss', fl_loss, r )
-                writer.add_scalar( 'fl_val/acc1', fl_acc1, r )
+            if writer:
+                writer.add_scalar( 'fl_val/loss', fl_loss.avg, r )
+                writer.add_scalar( 'fl_val/acc1', fl_acc1.avg, r )
 
         self.logger.info(
-            'FL training with {} model with best accuracy {}'.format(
-                model_str, self.server.best_acc
+            'FL training with {} model with best accuracy {acc1:.3f}'.format(
+                model_str, acc1=self.server.best_acc
             )
         )
