@@ -26,6 +26,16 @@ def build_network( model_name, **kwargs ):
 
 
 def create_model( args, model=None, fl=False ):
+    """
+    create model for server and clients
+    Args:
+        args: running arguments
+        model: server model
+        fl: whether create model for fl or centralized training
+
+    Returns:
+        server or client models
+    """
     device = torch.device('cuda') if args.device == 'gpu' else torch.device('cpu')
 
     # create model for the server
@@ -95,6 +105,7 @@ class Conv2d_Orth( torch.nn.Module ):
         self.mask_S.weight.data.copy_( weight_mask )
         self.mask_S.weight.requires_grad = False
         self.conv2d_U.weight.data.copy_( weight_U )
+        # self.conv2d_U.weight.requires_grad = False
         if has_bias:
             self.conv2d_U.bias.data.copy_( m.bias )
 
@@ -103,10 +114,14 @@ class Conv2d_Orth( torch.nn.Module ):
         self.n_keep = math.ceil( self.keep * self.ochnls )
         self.fix_mask = np.arange( 0, self.n_keep )
         self.chnl_mask = torch.ones( self.ochnls, device='cuda' )
+        self.chnl_left = torch.ones( self.ochnls, device='cuda' )
+        self.chnl_mask_times = torch.zeros( self.ochnls, device='cuda' )
+        self.chnl_aggr_coeff = torch.zeros( self.ochnls, device='cuda' )
         self.scaling = 1.0
         self.t_s = t_s.cuda()
         self.random_mask = True
         self.fl = fl
+        self.is_decomposed = False
 
     def forward( self, x ):
         out = self.conv2d_V( x )
@@ -123,8 +138,12 @@ class Conv2d_Orth( torch.nn.Module ):
                 weight_mask = self.chnl_mask.view( self.ochnls, 1, 1, 1 )
                 self.mask_S.weight.data.copy_( weight_mask )
                 self.scaling = torch.norm( self.t_s ) / torch.norm( self.t_s * self.chnl_mask )
-            out = self.mask_S( out )
+            # TODO: whether or not add scaling in FL training
+            out = self.mask_S( out )  # scale outputs
         out = self.conv2d_U( out )
+        # TODO: mask U output channel
+        # if self.training:
+        #     out = self.mask_S( out ) / self.keep  # scale outputs
 
         return out
 

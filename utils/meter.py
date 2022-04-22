@@ -1,3 +1,5 @@
+import torch
+
 class AverageMeter( object ):
     """Computes and stores the average and current value"""
     def __init__( self ):
@@ -36,3 +38,11 @@ def cal_acc( output, target, topk=(1,) ):
         correct_k = correct[:k].view(-1).float().sum(0)
         acc.append(correct_k.mul_(100.0 / batch_size))
     return acc
+
+
+def cal_entropy( s, n ):
+    s = s.view( n, )
+    s_normalized = torch.nn.functional.normalize( s, p=1, dim=0 )
+    s_sum = torch.sum( s_normalized ** 2 )
+
+    return -torch.log2( s_sum ), torch.max( s )

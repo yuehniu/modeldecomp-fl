@@ -36,8 +36,6 @@ class Subset( torchvision.datasets.VisionDataset ):
 
 
 def create_dataset_fl( args ):
-    global_train_dl, global_val_dl = None, None
-    local_train_dl, local_val_dl = None, None
     if args.dataset == 'cifar10':
         global_train_set = dataset_CIFAR10_train
         global_val_set = dataset_CIFAR10_test
@@ -118,7 +116,7 @@ def generate_noniid( args, global_train_set, global_val_set ):
     local_train_indices = [ index[ 0 ].tolist() for index in local_train_indices ]
 
     local_val_indices, _ = create_lda_partitions(
-        dataset=np.array( global_val_set.target ),
+        dataset=np.array( global_val_set.targets ),
         dirichlet_dist=dirichlet_dist, num_partitions=args.n_clients,
         concentration=args.alpha, accept_imbalanced=False
     )

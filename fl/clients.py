@@ -1,21 +1,21 @@
 import time
 import torch
 
-from utils.nn import create_model
+from utils.nn import create_model, Conv2d_Orth, BasicBlock_Orth
 from utils.meter import AverageMeter, cal_acc
 from utils.frob import add_frob_decay
 
 
 class Client( object ):
-    def __init__( self, args, index, train_dl, val_dl, alpha, model_s, logger ):
+    def __init__( self, args, index, train_dl, val_dl, alpha, model, logger ):
         self.args = args
         self.client_index = index
         self.logger = logger
 
         self.train_dl, self.val_dl, self.alpha = train_dl, val_dl, alpha
 
-        assert model_s is not None, 'Define server model first!!!'
-        self.grouped_params, self.model = create_model( args, model=model_s, fl=True )
+        assert model is not None, 'Define server model first!!!'
+        self.grouped_params, self.model = create_model( args, model=model, fl=True )
         self.criterion = torch.nn.CrossEntropyLoss()
         if args.device == 'gpu':
             self.criterion.cuda()

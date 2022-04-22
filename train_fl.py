@@ -109,7 +109,7 @@ def main():
     writer = SummaryWriter( log_dir=args.logdir )
 
     # -------------------- Init a FL environment -------------------- #
-    fl_context = Context( args, logger=root_logger )
+    fl_context = Context( args, logger=root_logger, writer=writer )
     fl_context.init_server()
     fl_context.init_clients()
 

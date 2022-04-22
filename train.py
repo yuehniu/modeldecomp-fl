@@ -12,6 +12,8 @@ import torchvision.datasets as datasets
 from torch.utils.tensorboard import SummaryWriter
 
 sys.path.insert(0, './')
+from utils.frob import add_frob_decay
+from utils.meter import cal_acc, AverageMeter
 from utils.nn import build_network, convert_to_orth_model, update_orth_channel, add_regular_dropout
 from data.dataset import *
 
@@ -34,6 +36,14 @@ parser.add_argument(
 parser.add_argument(
     '--drop-orthogonal', action='store_true',
     help='whether to drop orthogonal channels'
+)
+parser.add_argument(
+    '--n-backward', default=10, type=int,
+    help='number of backwards per iteration'
+)
+parser.add_argument(
+    '--random-mask', action='store_true',
+    help='whether mask channels in a random way'
 )
 parser.add_argument(
     '--drop-regular', action='store_true',
@@ -93,6 +103,25 @@ def main():
     else:
         model.cpu()
 
+    # change weight decay in Orth_Conv to Frobenius decay
+    layer_with_frodecay = [ 'conv2d_V', 'conv2d_S', 'conv2d_U' ]
+    grouped_params = [
+        {
+            'params': [
+                p for n, p in model.named_parameters()
+                if not any( nf in n for nf in layer_with_frodecay )
+            ],
+            'weight_decay': args.wd
+        },
+        {
+            'params': [
+                p for n, p in model.named_parameters()
+                if any( nf in n for nf in layer_with_frodecay )
+            ],
+            'weight_decay': 0.0
+        }
+    ]
+
     # construct dataset
     assert train_set is not None, 'a training dataset has not been defined!'
     assert test_set is not None, 'a test dataset has not been defined!'
@@ -114,14 +143,14 @@ def main():
     else:
         criterion.cpu()
     optimizer = torch.optim.SGD(
-        model.parameters(), args.lr,
+        grouped_params, args.lr,
         momentum=args.momentum, weight_decay=args.wd
     )
 
     # lr scheduler
     if args.decay == 'cos':
         lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, args.epochs, eta_min=0.001
+            optimizer, args.epochs, eta_min=0.0001
         )
     elif args.decay == 'multisteps':
         lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
@@ -138,26 +167,25 @@ def main():
             model, train_loader, criterion, optimizer, epoch
         )
 
+        # update orthogonal channel after every epoch
+        if args.drop_orthogonal:
+            mask_info = '[Random Mask]' if args.random_mask else '[Deterministic Mask]'
+            print( mask_info+' Update orthogonal channel with keep rate: ', args.channel_keep )
+            with torch.no_grad():
+                update_orth_channel( model, optimizer, keep=args.channel_keep, random_mask=args.random_mask )
+
         prec1_val, loss_val = validate(
             model, val_loader, criterion, epoch
         )
 
-        lr_scheduler.step( epoch=epoch )
-
-        # update orthogonal channel after every epoch
-        if args.drop_orthogonal:
-            print( 'Update orthogonal channel with keep rate: ', args.channel_keep )
-            with torch.no_grad():
-                update_orth_channel( model, optimizer, keep=args.channel_keep )
+        lr_scheduler.step(epoch=epoch)
 
         # store training record
         writer.add_scalar( 'train/loss', loss_train.avg, epoch )
         writer.add_scalar( 'test/acc', prec1_val.avg, epoch )
-
         # update best accuracy
         if prec1_val.avg > best_acc:
             best_acc = prec1_val.avg
-
         # save checkpoint
         """
         if epoch % args.check_freq == 0:
@@ -181,11 +209,18 @@ def train( model, train_loader, criterion, optimizer, epoch ):
 
     end = time.time()
     # TODO: resolve how to update momentum
+    momentum = optimizer.param_groups[ 0 ][ 'momentum' ]
+    lr = optimizer.param_groups[ 0 ][ 'lr' ]
     for i, ( input, target ) in enumerate( train_loader ):
         # record data loading time
         data_time.update( time.time() - end )
 
-        # input = torch.ones( ( args.batch_size, 3, 32, 32 ), dtype=torch.float32 )
+        """
+        if i < 20:
+            optimizer.param_groups[ 0 ][ 'momentum' ] = 0.6
+        else:
+            optimizer.param_groups[ 0 ][ 'momentum' ] = momentum
+        """
 
         if args.device == 'gpu':
             input = input.cuda()
@@ -194,9 +229,13 @@ def train( model, train_loader, criterion, optimizer, epoch ):
         optimizer.zero_grad()
 
         # forward and backward
-        output = model( input )
-        loss = criterion( output, target )
-        loss.backward()
+        for _ in range( args.n_backward ):
+            output = model( input )
+            loss = criterion( output, target ) / args.n_backward
+            loss.backward()
+
+        # add Frobenius decay
+        add_frob_decay( model, alpha=args.wd )
 
         # update parameter
         optimizer.step()
@@ -245,46 +284,6 @@ def validate( model, val_loader, criterion, epoch ):
     print('Epoch: [{}]\tLoss {:.4f}\tPrec@1 {:.3f}'.format( epoch, avg_loss.avg, avg_acc.avg ) )
 
     return avg_acc, avg_loss
-
-
-def cal_acc( output, target, topk=(1,) ):
-    """
-    Calculate model accuracy
-    :param output:
-    :param target:
-    :param topk:
-    :return: topk accuracy
-    """
-    maxk = max( topk )
-    batch_size = target.size( 0 )
-
-    _, pred = output.topk( maxk, 1, True, True )
-    pred = pred.t()
-    correct = pred.eq( target.view(1, -1).expand_as(pred) )
-
-    acc = []
-    for k in topk:
-        correct_k = correct[:k].view(-1).float().sum(0)
-        acc.append(correct_k.mul_(100.0 / batch_size))
-    return acc
-
-
-class AverageMeter( object ):
-    """Computes and stores the average and current value"""
-    def __init__( self ):
-        self.reset()
-
-    def reset( self ):
-        self.val = 0
-        self.avg = 0
-        self.sum = 0
-        self.count = 0
-
-    def update( self, val, n=1 ):
-        self.val = val
-        self.sum += val * n
-        self.count += n
-        self.avg = self.sum / self.count
 
 
 if __name__ == '__main__':

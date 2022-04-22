@@ -11,13 +11,14 @@ from utils.nn import build_network, convert_to_orth_model, create_model
 
 
 class Context():
-    def __init__( self, args, logger ):
+    def __init__( self, args, logger, writer ):
         self.args = args
         self.logger = logger
+        self.writer = writer
         self.logger.info( 'Init a FL context' )
 
         # define server model
-        self.model_s = create_model( args, model=None, fl=True )
+        self.model = create_model( args, model=None, fl=True )
 
         # define global and local dataset
         self.global_train_dl, self.global_val_dl, self.local_train_dl, self.local_val_dl = create_dataset_fl( args )
@@ -43,7 +44,7 @@ class Context():
             self.clients[ i ] = Client(
                 self.args, i,
                 self.local_train_dl[ i ], self.local_val_dl[ i ], alpha,
-                model_s=self.model_s, logger=self.logger
+                model=self.model, logger=self.logger
             )
 
     def connect_active_clients( self ):
@@ -56,7 +57,9 @@ class Context():
 
     def init_server( self ):
         self.server = Server(
-            self.args, self.model_s, self.global_train_dl, self.global_val_dl, self.logger
+            self.args, self.model,
+            self.global_train_dl, self.global_val_dl,
+            self.logger, self.writer
         )
 
     def fl_train( self, writer=None ):
@@ -82,17 +85,23 @@ class Context():
             # aggregate
             self.server.aggregate( self.active_clients )
 
+            # re-decompose server model
+            self.server.decompose()
+
+            # profile rank
+            self.server.profile_rank( r=r )
+
             # evaluate global model
             fl_acc1, fl_loss = self.server.eval( r=r )
 
             self.global_epoch += self.args.local_epoch
 
             if writer:
-                writer.add_scalar( 'fl_val/loss', fl_loss.avg, r )
-                writer.add_scalar( 'fl_val/acc1', fl_acc1.avg, r )
+                writer.add_scalar( 'server/loss', fl_loss.avg, r )
+                writer.add_scalar( 'server/acc1', fl_acc1.avg, r )
 
         self.logger.info(
-            'FL training with {} model with best accuracy {acc1:.3f}'.format(
-                model_str, acc1=self.server.best_acc
+            'FL training with {} model, keep rate {},  best accuracy {acc1:.3f}'.format(
+                model_str, self.args.channel_keep, acc1=self.server.best_acc
             )
         )
