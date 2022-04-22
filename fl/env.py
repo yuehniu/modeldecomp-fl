@@ -89,7 +89,7 @@ class Context():
             self.server.decompose()
 
             # profile rank
-            self.server.profile_rank( r=r )
+            self.server.profile_rank( r=r, model_c=self.active_clients[ 0 ].model )
 
             # evaluate global model
             fl_acc1, fl_loss = self.server.eval( r=r )

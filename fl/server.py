@@ -15,8 +15,8 @@ class Server( object ):
         self.logger = logger
         self.writer = writer
 
-        _, self.model = create_model( args, model=model, fl=True )
-        # self.model = model
+        # _, self.model = create_model( args, model=model, fl=True )
+        self.model = model
 
         # global momentum
         self.mm_buffer = {}
@@ -82,16 +82,16 @@ class Server( object ):
         return avg_acc, avg_loss
 
     def clear_global_stats( self, model_c ):
-        def __recursive_clear( module, module_c ):
+        def __clear( module, module_c ):
             for m, m_c in zip( module.children(), module_c.children() ):
                 if isinstance( m, torch.nn.Sequential ):
                     assert isinstance( m_c, torch.nn.Sequential ), 'Mismatch between server and client models'
-                    __recursive_clear( m, m_c )
+                    __clear( m, m_c )
                 else:
                     if isinstance( m, BasicBlock_Orth ) or isinstance( m, BasicBlock ):
                         assert isinstance( m_c, BasicBlock_Orth ) or isinstance( m_c, BasicBlock ), \
                             'Mismatch between server and client models'
-                        __recursive_clear( m, m_c )
+                        __clear( m, m_c )
                     elif isinstance( m, Conv2d_Orth ) and isinstance( m_c, Conv2d_Orth ):
                         # - keep unselected channels
                         """
@@ -151,18 +151,19 @@ class Server( object ):
                             m.bias.data.zero_()
                             self.mm_buffer[ m.bias ] = torch.zeros_like( m.bias.data )
 
-        __recursive_clear( self.model, model_c )
+        __clear( self.model, model_c )
 
     # Aggregate methods
     def aggregate_fedavg( self, clients ):
         # get client parameters, reconstruct, and apply aggregation
-        def __recursive_aggregate( module_s, module_c, alpha, optimizer ):
+        def __aggregate( module_s, module_c, alpha, optimizer ):
             for m_s, m_c in zip( module_s.children(), module_c.children() ):
                 if isinstance( m_s, torch.nn.Sequential ):
-                    __recursive_aggregate( m_s, m_c, alpha, optimizer )
+                    __aggregate( m_s, m_c, alpha, optimizer )
                 else:
                     if isinstance( m_s, BasicBlock ) or isinstance( m_s, BasicBlock_Orth ):
-                        __recursive_aggregate( m_s, m_c, alpha, optimizer )
+                        __aggregate( m_s, m_c, alpha, optimizer )
+
                     elif isinstance( m_s, Conv2d_Orth ) and isinstance( m_c, Conv2d_Orth ):
                         w_V_aggr = m_c.conv2d_V.weight * m_s.chnl_aggr_coeff.unsqueeze(1).unsqueeze(1).unsqueeze(1)
                         mm_V = optimizer.state[ m_c.conv2d_V.weight ][ 'momentum_buffer' ] * \
@@ -185,6 +186,7 @@ class Server( object ):
                             m_s.conv2d_U.bias.data.add_( m_c.conv2d_U.bias, alpha=alpha )
                             mm_bias = optimizer.state[ m_c.conv2d_U.bias ][ 'momentum_buffer' ]
                             self.mm_buffer[ m_s.conv2d_U.bias ].data.add_( mm_bias, alpha=alpha )
+
                     elif isinstance( m_s, torch.nn.Conv2d ) and isinstance( m_c, Conv2d_Orth ):
                         ichnls, ochnls = m_c.conv2d_V.in_channels, m_c.conv2d_V.out_channels
                         sz_kern = m_c.conv2d_V.kernel_size
@@ -212,6 +214,7 @@ class Server( object ):
                             m_s.bias.data.add_( m_c.conv2d_U.bias.data, alpha=alpha )
                             mm_bias = optimizer.state[ m_c.conv2d_U.bias ][ 'momentum_buffer' ]
                             self.mm_buffer[ m_s.bias ].data.add_( mm_bias, alpha=alpha )
+
                     elif isinstance( m_s, torch.nn.Conv2d ) and isinstance( m_c, torch.nn.Conv2d ):
                         m_s.weight.data.add_( m_c.weight.data, alpha=alpha )
 
@@ -223,6 +226,7 @@ class Server( object ):
 
                             mm_bias = optimizer.state[ m_c.bias ][ 'momentum_buffer' ]
                             self.mm_buffer[ m_s.bias ].data.add_( mm_bias, alpha=alpha )
+
                     elif isinstance( m_s, torch.nn.BatchNorm2d ):
                         assert isinstance( m_c, torch.nn.BatchNorm2d ), 'Mismatch between server and client models'
 
@@ -236,6 +240,7 @@ class Server( object ):
                         self.mm_buffer[ m_s.weight ].data.add_( mm_w, alpha=alpha )
                         mm_bias = optimizer.state[ m_c.bias ][ 'momentum_buffer' ]
                         self.mm_buffer[ m_s.bias ].data.add_( mm_bias, alpha=alpha )
+
                     elif isinstance( m_s, torch.nn.Linear ):
                         assert isinstance( m_c, torch.nn.Linear ), 'Mismatch between server and client models'
                         m_s.weight.data.add_( m_c.weight.data, alpha=alpha )
@@ -250,20 +255,21 @@ class Server( object ):
 
         # - apply aggregation
         for client in clients:
-            __recursive_aggregate( self.model, client.model, client.alpha, client.optimizer )
+            __aggregate( self.model, client.model, client.alpha, client.optimizer )
 
     def send_sub_model( self, client, model_s, model_c, random_mask=True ):
 
-        def __recursive_refresh( module_s, module_c ):
+        def __refresh( module_s, module_c ):
             for m_s, m_c in zip( module_s.children(), module_c.children() ):
                 if isinstance( m_c, torch.nn.Sequential ):
                     assert isinstance( m_s, torch.nn.Sequential ), 'Mismatch between server and client models'
-                    __recursive_refresh( m_s, m_c )
+                    __refresh( m_s, m_c )
                 else:
                     if isinstance( m_c, BasicBlock ) or isinstance( m_c, BasicBlock_Orth ):
                         assert isinstance( m_s, BasicBlock_Orth ) or isinstance( m_s, BasicBlock ), \
                             'Mismatch between server and client models'
-                        __recursive_refresh( m_s, m_c )
+                        __refresh( m_s, m_c )
+
                     elif isinstance( m_c, Conv2d_Orth ):
                         ichnls, ochnls = m_c.conv2d_V.in_channels, m_c.conv2d_V.out_channels
                         sz_kern = m_c.conv2d_V.kernel_size
@@ -278,9 +284,9 @@ class Server( object ):
                         else:
                             raise ValueError
 
-                        m_c.t_s = tt_s
                         # generate mask
-                        tt_s2 = np.square(tt_s.cpu().numpy())
+                        m_c.t_s = tt_s
+                        tt_s2 = np.square( tt_s.cpu().numpy() )
                         m_c.p_s, m_c.chnl_mask = tt_s2 / tt_s2.sum(), torch.zeros_like( m_c.t_s )
                         if random_mask:
                             chnl_keep = np.random.choice( ochnls, m_c.n_keep, replace=False, p=m_c.p_s )
@@ -383,7 +389,7 @@ class Server( object ):
                                     self.mm_buffer[ m_s.bias ]
                                 )
 
-        __recursive_refresh( model_s, model_c )
+        __refresh( model_s, model_c )
 
     def decompose( self ):
 
@@ -409,23 +415,24 @@ class Server( object ):
                     m.conv2d_V.weight.data.copy_(w_s_V)
                     m.conv2d_S.weight.data.copy_(w_s_S)
                     m.is_decomposed = True
-                    m.chnl_mask_times = torch.zeros(ochnls, device='cuda')
-                    m.chnl_aggr_coeff = torch.zeros(ochnls, device='cuda')
+                    m.chnl_mask_times = torch.zeros( ochnls, device='cuda' )
+                    m.chnl_aggr_coeff = torch.zeros( ochnls, device='cuda' )
 
         __decompose( self.model )
 
-    def profile_rank( self, r ):
+    def profile_rank( self, r, model_c ):
         global i
         i = 1
 
-        def __profile( module ):
+        def __profile( module, module_c ):
             global i
-            for m in module.children():
-                if isinstance( m, torch.nn.Sequential ):
-                    __profile( m )
-                elif isinstance( m, BasicBlock_Orth ):
-                    __profile( m )
-                elif isinstance( m, Conv2d_Orth ):
+            for m, m_c in zip( module.children(), module_c.children() ):
+                if isinstance( m_c, torch.nn.Sequential ):
+                    __profile( m, m_c )
+                elif isinstance( m_c, BasicBlock_Orth ):
+                    __profile( m, m_c )
+
+                elif isinstance( m, Conv2d_Orth ) and isinstance( m_c, Conv2d_Orth ):
                     ochnls = m.conv2d_V.out_channels
                     m_str = 'Conv2d_Orth' + str( i ) + '-' + str( ochnls )
                     s = m.conv2d_S.weight.data.view( ochnls, )
@@ -436,4 +443,18 @@ class Server( object ):
 
                     i += 1
 
-        __profile( self.model )
+                elif isinstance( m, torch.nn.Conv2d ) and isinstance( m_c, Conv2d_Orth ):
+                    ichnls, ochnls = m_c.conv2d_V.in_channels, m_c.conv2d_V.out_channels
+                    sz_kern = m_c.conv2d_V.kernel_size
+                    sz_kern2 = sz_kern[ 0 ] * sz_kern[ 1 ]
+                    m_str = 'Conv2d_Orth' + str( i ) + '-' + str( ochnls )
+                    t_USV = m.weight.data.view( ochnls, ichnls * sz_kern2 )
+                    _, s, _ = torch.svd(t_USV)
+                    s_entropy, s_max = cal_entropy( s, ochnls )
+                    s_rank = 2 ** s_entropy
+                    self.writer.add_scalar( 'rank/'+m_str, s_rank, r )
+                    self.writer.add_scalar( 'smax/'+m_str, s_max, r )
+
+                    i += 1
+
+        __profile( self.model, model_c )
