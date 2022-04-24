@@ -15,8 +15,8 @@ class Server( object ):
         self.logger = logger
         self.writer = writer
 
-        # _, self.model = create_model( args, model=model, fl=True )
-        self.model = model
+        _, self.model = create_model( args, model=model, fl=True )
+        # self.model = model
 
         # global momentum
         self.mm_buffer = {}
@@ -197,15 +197,18 @@ class Server( object ):
                         t_s = m_c.conv2d_S.weight.data.view( ochnls, )
                         t_U = m_c.conv2d_U.weight.data.view( ochnls, ochnls )
 
+                        # - decompose models
                         t_s_norm = torch.norm( t_s )
                         t_s *= m_c.chnl_mask
                         t_s_mask_norm = torch.norm( t_s )
                         scaling = t_s_norm / t_s_mask_norm
                         t_USV = t_U @ torch.diag( t_s ) @ t_V
+
+                        # - apply aggregation on the module
                         w_USV = t_USV.view( ochnls, ichnls, *sz_kern )
+                        m_s.weight.data.add_( w_USV, alpha=alpha )
 
                         mm_V = optimizer.state[ m_c.conv2d_V.weight ][ 'momentum_buffer' ]
-                        m_s.weight.data.add_( w_USV, alpha=alpha )
                         self.mm_buffer[ m_s.weight ][ 0 ].data.add_( mm_V, alpha=alpha )
                         mm_U = optimizer.state[ m_c.conv2d_U.weight ][ 'momentum_buffer' ]
                         self.mm_buffer[ m_s.weight ][ 1 ].data.add_( mm_U, alpha=alpha )
@@ -286,7 +289,8 @@ class Server( object ):
 
                         # generate mask
                         m_c.t_s = tt_s
-                        tt_s2 = np.square( tt_s.cpu().numpy() )
+                        # tt_s2 = np.square( tt_s.cpu().numpy() )
+                        tt_s2 = tt_s.cpu().numpy()
                         m_c.p_s, m_c.chnl_mask = tt_s2 / tt_s2.sum(), torch.zeros_like( m_c.t_s )
                         if random_mask:
                             chnl_keep = np.random.choice( ochnls, m_c.n_keep, replace=False, p=m_c.p_s )

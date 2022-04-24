@@ -59,12 +59,12 @@ CUDA_VISIBLE_DEVICES=0 python train_fl.py \
 
 - random mask
 ```shell
-CUDA_VISIBLE_DEVICES=0 python train_fl.py \
+CUDA_VISIBLE_DEVICES=5 python train_fl.py \
     --wd=0.0005 \
-    --drop-orthogonal --random-mask --channel-keep=1.0 \
+    --drop-orthogonal --random-mask --channel-keep=0.6 \
     --local-epoch=2 --n-clients=100 --active-ratio=0.2\
     --distribution=noniid --alpha=Inf \
-    --logdir=log/tmp/orth_keep1.0_random_r400_ep2_cl100_0.2_wd5e-4_s
+    --logdir=log/tmp/orth_keep0.6_random_r400_ep2_cl100_0.2_wd5e-4_aggrUV_ps
 ```
 
 - deterministic mask
