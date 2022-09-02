@@ -103,7 +103,7 @@ class Conv2d_Orth( torch.nn.Module ):
         sz_kern, stride, padding = m.kernel_size, m.stride, m.padding
         has_bias = m.bias is not None
 
-        # save module paramters
+        # save module parameters
         self.keep = keep
         self.ichnls, self.ochnls, self.sz_kern = ichnls, ochnls, m.kernel_size
         self.v_ochnls = min( ichnls * sz_kern[0] * sz_kern[1], ochnls )
@@ -241,7 +241,7 @@ class BasicBlock_Orth( torch.nn.Module ):
 
         for m in block.children():
             if isinstance( m, torch.nn.Conv2d ):
-                m_orth = Conv2d_Orth( m, keep, fl )
+                m_orth = Conv2d_Orth_v2( m, keep, fl )
                 convs_orth.append( m_orth )
             elif isinstance( m, torch.nn.BatchNorm2d ):
                 bns.append( copy.deepcopy( m ) )
@@ -307,7 +307,7 @@ def convert_to_orth_model( model, keep, fl=False ):
                     if m.in_channels == 3 or m.kernel_size[0] == 1:  # ignore input layer or 1x1 kernel
                         m_orth = copy.deepcopy( m )
                     else:
-                        m_orth = Conv2d_Orth( m, keep=keep, fl=fl  )
+                        m_orth = Conv2d_Orth_v2( m, keep=keep, fl=fl  )
                 else:
                     m_orth = copy.deepcopy( m )
                 if in_sequential:
@@ -340,7 +340,7 @@ def update_orth_channel( model, optimizer, keep=1.0, random_mask=True ):
             else:
                 if isinstance( m, BasicBlock_Orth ):
                     __recursive_update( m )
-                elif isinstance( m, Conv2d_Orth ):
+                elif isinstance( m, Conv2d_Orth_v2 ):
                     # print( 'Update orthogonal channel in: ', m )
                     ichnls, ochnls = m.conv2d_V.in_channels, m.conv2d_V.out_channels
                     sz_kern = m.conv2d_V.kernel_size

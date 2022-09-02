@@ -9,7 +9,7 @@ import math
 
 import torch
 import numpy as np
-from utils.nn import BasicBlock_Orth, Conv2d_Orth, LSTMs_Orth, LSTM_Orth
+from utils.nn import BasicBlock_Orth, Conv2d_Orth, Conv2d_Orth_v2, LSTMs_Orth, LSTM_Orth
 from model.resnetcifar import BasicBlock
 from utils.meter import cal_entropy
 
@@ -26,7 +26,7 @@ def clear_global_stats(self, model_c):
                     assert isinstance( m_c, BasicBlock_Orth ) or isinstance( m_c, BasicBlock ), \
                             'Mismatch between server and client models'
                     __clear(m, m_c)
-                elif isinstance( m, Conv2d_Orth ) and isinstance( m_c, Conv2d_Orth ):
+                elif isinstance( m, Conv2d_Orth_v2 ) and isinstance( m_c, Conv2d_Orth_v2 ):
                     # - keep unselected channels
 
                     if m.conv2d_U.weight not in self.mm_buffer.keys():
@@ -97,7 +97,7 @@ def aggregate_fedavg( self, clients ):
                 if isinstance( m_s, BasicBlock ) or isinstance( m_s, BasicBlock_Orth ):
                     __aggregate( m_s, m_c, alpha, optimizer )
 
-                elif isinstance( m_s, Conv2d_Orth ) and isinstance( m_c, Conv2d_Orth ):
+                elif isinstance( m_s, Conv2d_Orth_v2 ) and isinstance( m_c, Conv2d_Orth_v2 ):
                     # - reset the flag indicating m_s is updated and need to be decomposed
                     m_s.is_decomposed = False
 
@@ -208,7 +208,7 @@ def send_sub_model( self, client, model_s, model_c, random_mask=True ):
                         'Mismatch between server and client models'
                     __send_sub( m_s, m_c )
 
-                elif isinstance( m_c, Conv2d_Orth ):
+                elif isinstance( m_c, Conv2d_Orth_v2 ):
                     v_ichnls, v_ochnls = m_c.conv2d_V.in_channels, m_c.conv2d_V.out_channels
                     u_ichnls, u_ochnls = m_c.conv2d_U.in_channels, m_c.conv2d_U.out_channels
                     sz_kern  = m_c.conv2d_V.kernel_size
@@ -268,7 +268,7 @@ def send_sub_model( self, client, model_s, model_c, random_mask=True ):
                         client.optimizer.state[ m_c.conv2d_V.weight ][ 'momentum_buffer' ].copy_( mm_V_mask )
                         client.optimizer.state[ m_c.conv2d_U.weight ][ 'momentum_buffer' ].copy_( mm_U_mask )
                         if m_c.conv2d_U.bias is not None:
-                            if isinstance( m_s, Conv2d_Orth ):
+                            if isinstance( m_s, Conv2d_Orth_v2 ):
                                 client.optimizer.state[ m_c.conv2d_U.bias ][ 'momentum_buffer' ].copy_(
                                     self.mm_buffer[ m_s.conv2d_U.bias ]
                                 )
@@ -354,7 +354,7 @@ def decompose( self ):
                 __decompose( m )
             elif isinstance( m, BasicBlock_Orth ):
                 __decompose( m )
-            elif isinstance( m, Conv2d_Orth ):
+            elif isinstance( m, Conv2d_Orth_v2 ):
                 m.is_decomposed = True
 
                 v_ichnls, v_ochnls = m.conv2d_V.in_channels, m.conv2d_V.out_channels
@@ -392,7 +392,7 @@ def profile_rank( self, r, model_c ):
             elif isinstance( m_c, BasicBlock_Orth ):
                 __profile( m, m_c )
 
-            elif isinstance( m, Conv2d_Orth ) and isinstance( m_c, Conv2d_Orth ):
+            elif isinstance( m, Conv2d_Orth_v2 ) and isinstance( m_c, Conv2d_Orth_v2 ):
                 ochnls = m.conv2d_V.out_channels
                 m_str = 'Conv2d_Orth' + str( i ) + '-' + str( ochnls )
                 s = m.conv2d_S.weight.data.view( ochnls, )
@@ -403,7 +403,7 @@ def profile_rank( self, r, model_c ):
 
                 i += 1
 
-            elif isinstance( m, torch.nn.Conv2d ) and isinstance( m_c, Conv2d_Orth ):
+            elif isinstance( m, torch.nn.Conv2d ) and isinstance( m_c, Conv2d_Orth_v2 ):
                 ichnls, ochnls = m_c.conv2d_V.in_channels, m_c.conv2d_V.out_channels
                 sz_kern = m_c.conv2d_V.kernel_size
                 sz_kern2 = sz_kern[ 0 ] * sz_kern[ 1 ]
@@ -432,7 +432,7 @@ def profile_sampling( self ):
             elif isinstance( m, BasicBlock_Orth ):
                 __profile( m )
 
-            elif isinstance( m, Conv2d_Orth ):
+            elif isinstance( m, Conv2d_Orth_v2 ):
                 ochnls = m.conv2d_V.out_channels
                 m_str = 'Conv2d_Orth' + str( i ) + '-' + str( ochnls )
                 # self.writer.add_scalar( 'rank/'+m_str, s_rank, r )
