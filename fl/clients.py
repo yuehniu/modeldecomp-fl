@@ -1,8 +1,10 @@
 import time
+import math
 import torch
+import numpy as np
 
 from utils.nn import create_model, Conv2d_Orth, BasicBlock_Orth
-from utils.meter import AverageMeter, cal_acc
+from utils.meter import AverageMeter, cal_acc, cal_acc_binary
 from utils.frob import add_frob_decay
 
 
@@ -15,8 +17,14 @@ class Client( object ):
         self.train_dl, self.val_dl, self.alpha = train_dl, val_dl, alpha
 
         assert model is not None, 'Define server model first!!!'
-        self.grouped_params, self.model = create_model( args, model=model, fl=True )
-        self.criterion = torch.nn.CrossEntropyLoss()
+        self.channel_keep = args.channel_keep
+        if args.hetero:
+            self.channel_keep = np.random.choice( args.client_capacities, 1, p=args.client_ratios )[ 0 ]
+        self.grouped_params, self.model = create_model( args, model=model, fl=True, keep=self.channel_keep )
+        if self.args.dataset == 'imdb':
+            self.criterion = torch.nn.BCELoss()
+        else:
+            self.criterion = torch.nn.CrossEntropyLoss()
         if args.device == 'gpu':
             self.criterion.cuda()
 
@@ -46,8 +54,8 @@ class Client( object ):
         cur_global_epoch = cur_round * self.args.local_epoch
         cur_local_epoch = 0
         for epoch in range( cur_global_epoch, cur_global_epoch + self.args.local_epoch ):
-            self.train_one_epoch( epoch, False )
-            self.eval( epoch )
+            self.train_one_epoch( epoch, True )
+            # self.eval( epoch )
 
             self.lr_scheduler.step( epoch=cur_round )
 
@@ -60,6 +68,8 @@ class Client( object ):
         self.model.train()
 
         end = time.time()
+        if self.args.dataset == 'imdb':
+            h = self.model.init_hidden( self.args.local_bs )
         for i, ( input, target ) in enumerate( self.train_dl ):
             # record data loading time
             data_time.update( time.time() - end )
@@ -70,19 +80,31 @@ class Client( object ):
             self.optimizer.zero_grad()
 
             # forward and backward
-            output = self.model( input )
-            loss = self.criterion( output, target )
+            if self.args.dataset == 'imdb':
+                h = tuple( [ each.data for each in h ] )
+                # h = [ tuple( [ each.data for each in hi ] ) for hi in h ]
+                output, h = self.model( input, h )
+                loss = self.criterion( output, target.float() )
+            else:
+                output = self.model( input )
+                loss = self.criterion( output, target )
+
             loss.backward()
 
             # add Frobenius decay
             if self.args.drop_orthogonal:
                 add_frob_decay( self.model, alpha=self.args.wd )
 
+            torch.nn.utils.clip_grad_norm_( self.model.parameters(), 5.0 )
+
             # update parameter
             self.optimizer.step()
 
             # report acc and loss
-            prec1 = cal_acc( output, target )[ 0 ]
+            if self.args.dataset == 'imdb':
+                prec1 = cal_acc_binary( output, target )
+            else:
+                prec1 = cal_acc( output, target )[ 0 ]
 
             avg_acc.update( prec1.item(), input.size( 0 ) )
             avg_loss.update( loss.item(), input.size( 0 ) )
@@ -110,15 +132,25 @@ class Client( object ):
 
         self.model.eval()
 
+        if self.args.dataset == 'imdb':
+            h = self.model.init_hidden( self.args.batch_size )
         for i, ( input, target ) in enumerate( self.val_dl ):
             if self.args.device == 'gpu':
                 input, target = input.cuda(), target.cuda()
 
             with torch.no_grad():
-                output = self.model( input )
-                loss = self.criterion( output, target )
+                if self.args.dataset == 'imdb':
+                    h = tuple( [ each.data for each in h ] )
+                    # h = [ tuple( [ each.data for each in hi ] ) for hi in h ]
+                    output, h = self.model( input, h )
+                else:
+                    output = self.model( input )
+                loss = self.criterion( output, target.float() )
 
-            prec1 = cal_acc( output, target )[ 0 ]
+            if self.args.dataset == 'imdb':
+                prec1 = cal_acc_binary( output, target )
+            else:
+                prec1 = cal_acc( output, target )[ 0 ]
             avg_loss.update( loss.item(), input.size( 0 ) )
             avg_acc.update( prec1.item(), input.size( 0 ) )
 

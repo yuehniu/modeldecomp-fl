@@ -29,7 +29,7 @@ parser.add_argument(
     '--device', default='gpu', type=str, choices=['gpu', 'cpu'], help='untrusted platform'
 )
 parser.add_argument(
-    '--dataset', default='cifar10', type=str, choices=['cifar10', 'cifar100', 'imagenet']
+    '--dataset', default='cifar10', type=str, choices=['cifar10', 'femnist', 'imdb']
 )
 
 # model decomposition hyperparam
@@ -40,15 +40,29 @@ parser.add_argument(
     '--drop-orthogonal', action='store_true', help='whether to drop orthogonal channels'
 )
 parser.add_argument(
-    '--random-mask', action='store_true', help='whether mask channels in a random way'
+    '--drop-original', action='store_true', help='whether to drop original channels'
 )
 parser.add_argument(
-    '--drop-regular', action='store_true', help='whether to drop regular convolutional channels'
+    '--random-mask', action='store_true', help='whether mask channels in a random way'
 )
 
 # FL hyperparam
 parser.add_argument(
     '--n-clients', default=10, type=int, help='number of total clients'
+)
+parser.add_argument(
+    '--prob-factor', default=1.0, type=float, help='factor controls sampling probability'
+)
+parser.add_argument(
+    '--hetero', action='store_true', help='whether in heterogeneous settings'
+)
+parser.add_argument(
+    '--client-capacities', default=[ 0.2, 0.4 ], nargs="+", type=float,
+    help='heterogeneous clients capacities'
+)
+parser.add_argument(
+    '--client-ratios', default=[ 0.6, 0.4 ], nargs="+", type=float,
+    help='ratios of various heterogeneous clients'
 )
 parser.add_argument(
     '--active-ratio', default=0.2, type=float, help='ratio of active clients'
@@ -91,7 +105,7 @@ root_logger = logging.getLogger()
 root_logger.setLevel( logging.DEBUG )
 
 if not os.path.exists( args.logdir ):
-    os.mkdir( args.logdir )
+    os.makedirs( args.logdir )
 fileHandler = logging.FileHandler("{0}/{1}.log".format( args.logdir, 'train' ) )
 fileHandler.setFormatter( logFormatter )
 root_logger.addHandler( fileHandler )
@@ -100,11 +114,17 @@ consoleHandler = logging.StreamHandler( sys.stdout )
 consoleHandler.setFormatter( logFormatter )
 root_logger.addHandler( consoleHandler )
 
+# print all elements in tensor for debugging purpose
+torch.set_printoptions( edgeitems=sys.maxsize )
+
 
 def main():
     root_logger.info( '-' * 80 )
     root_logger.info( 'Federated model decomposition' )
     root_logger.info( '-' * 80 )
+
+    for k, v in args.__dict__.items():
+        root_logger.info( '    - {} : {}'.format( k, v ) )
 
     writer = SummaryWriter( log_dir=args.logdir )
 

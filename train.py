@@ -208,19 +208,10 @@ def train( model, train_loader, criterion, optimizer, epoch ):
     model.train()
 
     end = time.time()
-    # TODO: resolve how to update momentum
-    momentum = optimizer.param_groups[ 0 ][ 'momentum' ]
     lr = optimizer.param_groups[ 0 ][ 'lr' ]
     for i, ( input, target ) in enumerate( train_loader ):
         # record data loading time
         data_time.update( time.time() - end )
-
-        """
-        if i < 20:
-            optimizer.param_groups[ 0 ][ 'momentum' ] = 0.6
-        else:
-            optimizer.param_groups[ 0 ][ 'momentum' ] = momentum
-        """
 
         if args.device == 'gpu':
             input = input.cuda()

@@ -26,10 +26,10 @@ class BasicBlock(nn.Module):
     def __init__(self, inplanes, planes, stride=1, downsample=None):
         super(BasicBlock, self).__init__()
         self.conv1 = conv3x3(inplanes, planes, stride)
-        self.bn1 = nn.BatchNorm2d(planes)
+        self.bn1 = nn.BatchNorm2d( planes, track_running_stats=False )
         self.relu = nn.ReLU(inplace=True)
         self.conv2 = conv3x3(planes, planes)
-        self.bn2 = nn.BatchNorm2d(planes)
+        self.bn2 = nn.BatchNorm2d( planes, track_running_stats=False )
         self.downsample = downsample
         self.stride = stride
 
@@ -97,7 +97,7 @@ class ResNet(nn.Module):
         self.inplanes = 64
         super(ResNet, self).__init__()
         self.conv1 = nn.Conv2d( 3, 64, kernel_size=3, stride=1, padding=1, bias=False )
-        self.bn1 = nn.BatchNorm2d( 64 )
+        self.bn1 = nn.BatchNorm2d( 64, track_running_stats=False )
         self.relu = nn.ReLU( inplace=True )
         self.layer1 = self._make_layer( block, 64, layers[0], stride=1 )
         self.layer2 = self._make_layer( block, 128, layers[1], stride=2 )
@@ -120,7 +120,7 @@ class ResNet(nn.Module):
             downsample = nn.Sequential(
                 nn.Conv2d(self.inplanes, planes * block.expansion,
                           kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(planes * block.expansion),
+                nn.BatchNorm2d( planes * block.expansion, track_running_stats=False ),
             )
 
         layers = []

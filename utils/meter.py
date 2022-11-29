@@ -40,6 +40,14 @@ def cal_acc( output, target, topk=(1,) ):
     return acc
 
 
+def cal_acc_binary( pred, label ):
+    pred = torch.round( pred.squeeze() )
+    batch_size = label.size( 0 )
+    acc = torch.sum( pred == label.squeeze() )
+    acc = acc * 100.0 / batch_size
+    return acc
+
+
 def cal_entropy( s, n ):
     s = s.view( n, )
     s_normalized = torch.nn.functional.normalize( s, p=1, dim=0 )
