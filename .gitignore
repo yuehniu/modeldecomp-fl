@@ -1,6 +1,7 @@
 # Data files
 log/
 checkpoints/
+results/
 .DS_Store
 .idea/
 # Byte-compiled / optimized / DLL files
