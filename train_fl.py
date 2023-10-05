@@ -86,7 +86,10 @@ parser.add_argument(
     '--global-bs', default=128, type=int, help='batch size of global validation'
 )
 parser.add_argument(
-    '--total-round', default=400, type=int, help='total global training epochs'
+    '--total-round', default=400, type=int, help='total global training rounds'
+)
+parser.add_argument(
+    '--warmup-round', default=50, type=int, help='warmup round for fixed dropout'
 )
 parser.add_argument( '--lr', default=0.1, type=float )
 parser.add_argument( '--decay', default='cos', choices=[ 'cos', 'multisteps' ] )

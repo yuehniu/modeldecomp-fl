@@ -81,8 +81,9 @@ class Context():
             self.connect_active_clients()
 
             # create sub model
+            random_mask = self.args.random_mask and r >= self.args.warmup_round
             time_sub_beg = time.time()
-            self.server.create_sub_model( self.active_clients )
+            self.server.create_sub_model( self.active_clients, random_mask=random_mask )
             time_sub_end = time.time()
             time_submodel.update( time_sub_end-time_sub_beg, 1 )
 

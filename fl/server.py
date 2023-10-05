@@ -58,11 +58,12 @@ class Server( object ):
         self.logger.info( 'Server: \taggregate parameter from clients' )
         self.aggregator( self, clients )
 
-    def create_sub_model( self, clients ):
+    def create_sub_model( self, clients, random_mask=False ):
         """
         create a sub model for each client
         Args:
             clients: a list of activate clients
+            random_mask: whether to apply random dropout
         Returns:
 
         Note:
@@ -72,7 +73,7 @@ class Server( object ):
 
         keep = []
         for i, client in enumerate( clients ):
-            self.send_sub_model( self, client, self.model, client.model, random_mask=self.args.random_mask )
+            self.send_sub_model( self, client, self.model, client.model, random_mask=random_mask )
             keep.append( client.channel_keep )
         # self.writer.add_histogram( 'model/keep', np.array( keep ), self.r  )
         # self.profile_sampling( self )
