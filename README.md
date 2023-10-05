@@ -3,10 +3,10 @@ This is the official implementation for the paper
 "Overcoming Resource Constraints in Federated Learning: Large Models Can Be Trained with only Weak Clients".
 
 ## Dependencies
-- torch>=1.10
-- numpy>=1.17
-- tensorboard>=2.6
-- torchvision>0.10
+- torch=1.10
+- numpy=1.17
+- tensorboard=2.6
+- torchvision=0.10
 
 ## Run in federated settings
 
